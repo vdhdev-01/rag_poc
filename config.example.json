@@ -1,0 +1,24 @@
+{
+  "postgres": {
+    "host": "YOUR_DB_HOST",
+    "port": 5432,
+    "user": "YOUR_DB_USER",
+    "password": "YOUR_DB_PASSWORD",
+    "database": "poc"
+  },
+  "openai": {
+    "api_key": "sk-...",
+    "model": "gpt-4o-mini",
+    "embedding_model": "text-embedding-3-small"
+  },
+  "embedding": {
+    "provider": "local",
+    "local_model": "all-MiniLM-L6-v2",
+    "dimensions": 384
+  },
+  "uploads_dir": "uploads",
+  "chunk_size": 1000,
+  "chunk_overlap": 100,
+  "default_org_id": "",
+  "default_collection_id": ""
+}

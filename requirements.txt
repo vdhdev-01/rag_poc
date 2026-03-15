@@ -1,0 +1,23 @@
+# Database
+psycopg2-binary==2.9.9
+
+# Web framework
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.20
+
+# Document parsing
+pypdf==5.1.0
+python-docx==1.1.2
+
+# Embeddings (local — no API key required)
+sentence-transformers==3.3.1
+
+# LLM (optional — set openai.api_key in config.json to enable)
+openai==1.57.0
+
+# Static file serving (required by FastAPI StaticFiles)
+aiofiles==24.1.0
+
+# Utilities
+numpy==2.1.3
