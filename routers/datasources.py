@@ -12,8 +12,9 @@ import mimetypes
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
+from typing import Optional
 
 from database import get_conn, app_config
 from services.ingestion import process_datasource
@@ -44,19 +45,33 @@ def _default_ids() -> tuple[str, str]:
 # ── List ──────────────────────────────────────────────────────────────────────
 
 @router.get("/datasources")
-def list_datasources():
+def list_datasources(collection_id: Optional[str] = Query(default=None)):
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT id, guid, name, original_filename, mime_type,
-                       file_size_bytes, status, chunk_size, chunk_overlap,
-                       metadata, created_at, updated_at,
-                       total_chunks, embedded_chunks, failed_chunks
-                FROM   vw_datasource_summary
-                ORDER  BY created_at DESC
-                """
-            )
+            if collection_id:
+                cur.execute(
+                    """
+                    SELECT id, guid, name, original_filename, mime_type,
+                           file_size_bytes, status, chunk_size, chunk_overlap,
+                           metadata, created_at, updated_at,
+                           total_chunks, embedded_chunks, failed_chunks
+                    FROM   vw_datasource_summary
+                    WHERE  collection_id = %s::uuid
+                    ORDER  BY created_at DESC
+                    """,
+                    (collection_id,),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT id, guid, name, original_filename, mime_type,
+                           file_size_bytes, status, chunk_size, chunk_overlap,
+                           metadata, created_at, updated_at,
+                           total_chunks, embedded_chunks, failed_chunks
+                    FROM   vw_datasource_summary
+                    ORDER  BY created_at DESC
+                    """
+                )
             cols = [d[0] for d in cur.description]
             rows = cur.fetchall()
 
@@ -79,12 +94,18 @@ def list_datasources():
 # ── Upload ────────────────────────────────────────────────────────────────────
 
 @router.post("/datasources/upload", status_code=status.HTTP_201_CREATED)
-async def upload_datasources(request: Request, background_tasks: BackgroundTasks):
+async def upload_datasources(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    collection_id: Optional[str] = Query(default=None),
+):
     """
     Accepts multipart/form-data from Uppy (field name: files[]).
     Creates a datasource record per file and queues ingestion.
+    Pass ?collection_id=<uuid> to associate with a specific collection.
     """
-    org_id, col_id = _default_ids()
+    org_id, default_col_id = _default_ids()
+    col_id = collection_id or default_col_id
     cfg = app_config()
     chunk_size = int(cfg.get("chunk_size", 1000))
     chunk_overlap = int(cfg.get("chunk_overlap", 100))

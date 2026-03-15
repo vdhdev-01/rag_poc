@@ -66,8 +66,8 @@ async function apiFetch(path, opts = {}) {
 }
 
 const api = {
-  list:    ()           => apiFetch("/datasources"),
-  delete:  (id)         => apiFetch(`/datasources/${id}`, { method: "DELETE" }),
+  list:    (collectionId) => apiFetch(`/datasources${collectionId ? `?collection_id=${collectionId}` : ""}`),
+  delete:  (id)           => apiFetch(`/datasources/${id}`, { method: "DELETE" }),
   replace: (id, formData) =>
     fetch(`${API_BASE}/datasources/${id}/replace`, { method: "POST", body: formData }).then((r) => {
       if (!r.ok) throw new Error(`Replace failed: ${r.status}`);
@@ -182,7 +182,7 @@ function ChunkProgress({ total, embedded, failed }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function DatasourceManager() {
+export default function DatasourceManager({ collection, onBack }) {
   const [datasources, setDatasources] = useState([]);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState(null);
@@ -209,8 +209,12 @@ export default function DatasourceManager() {
       },
     });
 
+    const uploadUrl = collection?.id
+      ? `${API_BASE}/datasources/upload?collection_id=${collection.id}`
+      : `${API_BASE}/datasources/upload`;
+
     uppy.use(XHRUpload, {
-      endpoint: `${API_BASE}/datasources/upload`,
+      endpoint: uploadUrl,
       fieldName: "files[]",
       bundle: true,
     });
@@ -228,21 +232,22 @@ export default function DatasourceManager() {
       uppyRef.current = null;
       if (uppy && typeof uppy.destroy === "function") uppy.destroy();
     };
-  }, []);
+  // Re-create Uppy when the collection changes so the upload URL is correct
+  }, [collection?.id]);
 
   // ── Fetch ───────────────────────────────────────────────────
   const fetchDatasources = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await api.list();
+      const data = await api.list(collection?.id);
       setDatasources(data);
     } catch (e) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [collection?.id]);
 
   useEffect(() => { fetchDatasources(); }, [fetchDatasources]);
 
@@ -305,9 +310,20 @@ export default function DatasourceManager() {
       {/* Header */}
       <div style={styles.header}>
         <div>
-          <h1 style={styles.title}>Datasources</h1>
+          {/* Breadcrumb */}
+          {onBack && (
+            <button style={styles.breadcrumb} onClick={onBack}>
+              ← Collections
+            </button>
+          )}
+          <h1 style={styles.title}>
+            {collection ? collection.name : "Datasources"}
+          </h1>
           <p style={styles.subtitle}>
             {datasources.length} source{datasources.length !== 1 ? "s" : ""} indexed
+            {collection?.slug && (
+              <span style={{ marginLeft: 8, color: "#374151" }}>· {collection.slug}</span>
+            )}
           </p>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -477,6 +493,14 @@ const styles = {
   header: {
     display: "flex", justifyContent: "space-between", alignItems: "flex-start",
     marginBottom: 32, borderBottom: "1px solid #1F2937", paddingBottom: 24,
+  },
+  breadcrumb: {
+    display: "inline-flex", alignItems: "center",
+    background: "transparent", border: "none",
+    color: "#6B7280", fontSize: 12, cursor: "pointer",
+    fontFamily: "'IBM Plex Mono', monospace",
+    padding: "0 0 6px 0", letterSpacing: "0.02em",
+    transition: "color 0.15s",
   },
   title: {
     margin: 0, fontSize: 28, fontWeight: 700, letterSpacing: "-0.02em", color: "#F9FAFB",

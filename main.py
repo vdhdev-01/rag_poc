@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
-from routers import datasources, chat
+from routers import datasources, chat, collections
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,6 +38,7 @@ app.add_middleware(
 )
 
 # ── API routes ────────────────────────────────────────────────────────────────
+app.include_router(collections.router, prefix="/api", tags=["Collections"])
 app.include_router(datasources.router, prefix="/api", tags=["Datasources"])
 app.include_router(chat.router, prefix="/api", tags=["Chat"])
 

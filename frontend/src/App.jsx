@@ -1,5 +1,6 @@
 import { useState } from "react";
 import DatasourceManager from "./components/DatasourceManager.jsx";
+import CollectionPicker from "./components/CollectionPicker.jsx";
 import ChatAgent from "./components/ChatAgent.jsx";
 
 const NAV_ITEMS = [
@@ -8,10 +9,18 @@ const NAV_ITEMS = [
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState("chat");
+  const [activeTab, setActiveTab]           = useState("chat");
+  const [activeCollection, setActiveCollection] = useState(null);
+
+  function handleTabChange(key) {
+    setActiveTab(key);
+    // Reset collection selection when switching back to the tab
+    if (key !== "sources") setActiveCollection(null);
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#080B10", overflow: "hidden" }}>
+
       {/* Top navigation bar */}
       <nav style={navStyle}>
         <span style={logoStyle}>RAG POC</span>
@@ -20,7 +29,7 @@ export default function App() {
             <button
               key={key}
               style={{ ...tabBtn, ...(activeTab === key ? tabBtnActive : {}) }}
-              onClick={() => setActiveTab(key)}
+              onClick={() => handleTabChange(key)}
             >
               {label}
             </button>
@@ -28,7 +37,7 @@ export default function App() {
         </div>
       </nav>
 
-      {/* Page content — fills remaining viewport height */}
+      {/* Page content */}
       <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
         <div style={{
           position: "absolute", inset: 0,
@@ -36,10 +45,25 @@ export default function App() {
           flexDirection: "column",
           overflowY: activeTab === "sources" ? "auto" : "hidden",
         }}>
-          {activeTab === "chat"    && <ChatAgent />}
-          {activeTab === "sources" && <DatasourceManager />}
+          {/* Chat tab */}
+          {activeTab === "chat" && <ChatAgent />}
+
+          {/* Datasources tab — collection picker → datasource manager */}
+          {activeTab === "sources" && (
+            activeCollection
+              ? (
+                <DatasourceManager
+                  collection={activeCollection}
+                  onBack={() => setActiveCollection(null)}
+                />
+              )
+              : (
+                <CollectionPicker onSelect={setActiveCollection} />
+              )
+          )}
         </div>
       </div>
+
     </div>
   );
 }
