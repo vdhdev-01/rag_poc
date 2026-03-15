@@ -19,52 +19,72 @@ logger = logging.getLogger(__name__)
 
 def similarity_search(
     query_embedding: list[float],
-    collection_id: str,
+    collection_id: str | None = None,
     match_count: int = 6,
     min_similarity: float = 0.25,
 ) -> list[dict]:
     """
-    Call fn_similarity_search and return a list of chunk dicts.
-    Falls back to a raw cosine-distance query if the function doesn't exist yet.
+    Cosine similarity search against document_chunks.
+    If collection_id is None, searches across ALL collections.
     """
     vec_str = _vec_to_pg(query_embedding)
     with get_conn() as conn:
         with conn.cursor() as cur:
-            try:
-                cur.execute(
-                    """
-                    SELECT chunk_id, datasource_id, datasource_guid,
-                           datasource_name, collection_name,
-                           chunk_index, content, similarity
-                    FROM fn_similarity_search(
-                        %s::vector,
-                        %s::uuid,
-                        %s,
-                        %s
+            if collection_id:
+                # Scoped to one collection — use the stored function
+                try:
+                    cur.execute(
+                        """
+                        SELECT chunk_id, datasource_id, datasource_guid,
+                               datasource_name, collection_name,
+                               chunk_index, content, similarity
+                        FROM fn_similarity_search(%s::vector, %s::uuid, %s, %s)
+                        """,
+                        (vec_str, collection_id, match_count, min_similarity),
                     )
-                    """,
-                    (vec_str, collection_id, match_count, min_similarity),
-                )
-            except Exception:
-                conn.rollback()
-                # Fallback: direct table query (no minimum similarity filter)
+                except Exception:
+                    conn.rollback()
+                    cur.execute(
+                        """
+                        SELECT dc.id, dc.datasource_id, dc.datasource_guid,
+                               ds.name, col.name,
+                               dc.chunk_index, dc.content,
+                               (1 - (dc.embedding <=> %s::vector))::float AS similarity
+                        FROM   document_chunks dc
+                        JOIN   datasources     ds  ON ds.id  = dc.datasource_id
+                        JOIN   collections     col ON col.id = dc.collection_id
+                        WHERE  dc.status        = 'embedded'
+                          AND  dc.collection_id = %s::uuid
+                          AND  ds.deleted_at    IS NULL
+                          AND  ds.status        = 'ready'
+                        ORDER BY dc.embedding <=> %s::vector
+                        LIMIT  %s
+                        """,
+                        (vec_str, collection_id, vec_str, match_count),
+                    )
+            else:
+                # No collection filter — search all embedded chunks
                 cur.execute(
                     """
-                    SELECT dc.id, dc.datasource_id, dc.datasource_guid,
-                           ds.name, col.name,
-                           dc.chunk_index, dc.content,
+                    SELECT dc.id         AS chunk_id,
+                           dc.datasource_id,
+                           dc.datasource_guid,
+                           ds.name       AS datasource_name,
+                           col.name      AS collection_name,
+                           dc.chunk_index,
+                           dc.content,
                            (1 - (dc.embedding <=> %s::vector))::float AS similarity
                     FROM   document_chunks dc
                     JOIN   datasources     ds  ON ds.id  = dc.datasource_id
                     JOIN   collections     col ON col.id = dc.collection_id
-                    WHERE  dc.status       = 'embedded'
-                      AND  dc.collection_id = %s::uuid
-                      AND  ds.deleted_at   IS NULL
-                      AND  ds.status       = 'ready'
+                    WHERE  dc.status     = 'embedded'
+                      AND  ds.deleted_at IS NULL
+                      AND  ds.status     = 'ready'
+                      AND  (1 - (dc.embedding <=> %s::vector)) >= %s
                     ORDER BY dc.embedding <=> %s::vector
                     LIMIT  %s
                     """,
-                    (vec_str, collection_id, vec_str, match_count),
+                    (vec_str, vec_str, min_similarity, vec_str, match_count),
                 )
 
             rows = cur.fetchall()

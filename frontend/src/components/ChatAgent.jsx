@@ -12,6 +12,12 @@ import { useState, useEffect, useRef, useCallback } from "react";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
 
+async function fetchCollections() {
+  const res = await fetch(`${API_BASE}/collections`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
 const SYSTEM_NOTE =
   "Answers are grounded in your indexed datasources. " +
   "Cited source files appear beneath each response.";
@@ -19,7 +25,14 @@ const SYSTEM_NOTE =
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 function uid() {
-  return Math.random().toString(36).slice(2, 10);
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  // Fallback: RFC-4122 v4 UUID
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+  });
 }
 
 function formatTime(ts) {
@@ -39,15 +52,16 @@ function formatTime(ts) {
  *   { type: "done" }
  *   { type: "error",   message: "..." }
  */
-async function streamChat({ sessionId, message, history, onToken, onSources, onDone, onError }) {
+async function streamChat({ sessionId, message, history, collectionId, onToken, onSources, onDone, onError }) {
   try {
     const res = await fetch(`${API_BASE}/chat/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        session_id: sessionId,
+        session_id:    sessionId,
         message,
-        history: history.map((m) => ({ role: m.role, content: m.content })),
+        history:       history.map((m) => ({ role: m.role, content: m.content })),
+        collection_id: collectionId || null,
       }),
     });
 
@@ -211,14 +225,21 @@ function EmptyState() {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function ChatAgent({ title = "RAG Agent" }) {
-  const [sessionId]               = useState(uid);
-  const [messages, setMessages]   = useState([]);
-  const [input, setInput]         = useState("");
-  const [streaming, setStreaming] = useState(false);
-  const [error, setError]         = useState(null);
-  const bottomRef                 = useRef(null);
-  const inputRef                  = useRef(null);
-  const streamingIdRef            = useRef(null);
+  const [sessionId]                   = useState(uid);
+  const [messages, setMessages]       = useState([]);
+  const [input, setInput]             = useState("");
+  const [streaming, setStreaming]     = useState(false);
+  const [error, setError]             = useState(null);
+  const [collections, setCollections] = useState([]);
+  const [collectionId, setCollectionId] = useState("");   // "" = all collections
+  const bottomRef                     = useRef(null);
+  const inputRef                      = useRef(null);
+  const streamingIdRef                = useRef(null);
+
+  // Load collections for the dropdown
+  useEffect(() => {
+    fetchCollections().then(setCollections).catch(() => {});
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -254,6 +275,7 @@ export default function ChatAgent({ title = "RAG Agent" }) {
       sessionId,
       message: text,
       history,
+      collectionId: collectionId || null,
 
       onToken: (token) => {
         setMessages((prev) =>
@@ -289,7 +311,7 @@ export default function ChatAgent({ title = "RAG Agent" }) {
         );
       },
     });
-  }, [input, streaming, messages, sessionId]);
+  }, [input, streaming, messages, sessionId, collectionId]);
 
   function handleKeyDown(e) {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -318,13 +340,32 @@ export default function ChatAgent({ title = "RAG Agent" }) {
           <div>
             <h1 style={styles.headerTitle}>{title}</h1>
             <span style={styles.headerSub}>
-              Session: <span style={{ color: "#6B7280" }}>{sessionId}</span>
+              Session: <span style={{ color: "#6B7280" }}>{sessionId.slice(0, 8)}…</span>
             </span>
           </div>
         </div>
-        <button style={styles.clearBtn} onClick={clearSession}>
-          Clear session
-        </button>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {/* Collection selector */}
+          <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+            <span style={styles.dropdownIcon}>⊞</span>
+            <select
+              style={styles.collectionSelect}
+              value={collectionId}
+              onChange={(e) => setCollectionId(e.target.value)}
+              title="Filter by collection"
+            >
+              <option value="">All Collections</option>
+              {collections.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <button style={styles.clearBtn} onClick={clearSession}>
+            Clear session
+          </button>
+        </div>
       </div>
 
       {/* Messages */}
@@ -414,6 +455,27 @@ const styles = {
   },
   headerSub: {
     fontSize: 10, fontFamily: "'IBM Plex Mono', monospace", color: "#4B5563",
+  },
+  dropdownIcon: {
+    position: "absolute", left: 9, top: "50%",
+    transform: "translateY(-50%)",
+    fontSize: 12, color: "#4B5563",
+    pointerEvents: "none", zIndex: 1,
+  },
+  collectionSelect: {
+    background: "#0D1117",
+    border: "1px solid #1F2937",
+    color: "#9CA3AF",
+    padding: "6px 10px 6px 26px",
+    borderRadius: 5,
+    fontSize: 12,
+    cursor: "pointer",
+    fontFamily: "'IBM Plex Mono', monospace",
+    outline: "none",
+    appearance: "none",
+    WebkitAppearance: "none",
+    minWidth: 150,
+    maxWidth: 220,
   },
   clearBtn: {
     background: "transparent", border: "1px solid #1F2937",

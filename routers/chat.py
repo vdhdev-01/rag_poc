@@ -73,15 +73,19 @@ async def chat_stream(request: Request):
     session_id: str = body.get("session_id") or str(uuid.uuid4())
     message: str = (body.get("message") or "").strip()
     history: list[dict] = body.get("history") or []
+    # collection_id from client (optional) — None means search all collections
+    collection_id: str | None = body.get("collection_id") or None
 
     if not message:
         raise HTTPException(status_code=400, detail="'message' is required.")
 
-    collection_id = _default_collection_id()
+    # For DB session storage, fall back to default collection if none specified
+    default_col = _default_collection_id()
+    session_collection = collection_id or default_col
 
     # Ensure chat session exists in DB
     try:
-        _ensure_session(session_id, collection_id)
+        _ensure_session(session_id, session_collection)
         _save_message(session_id, "user", message)
     except Exception as exc:
         logger.warning("Could not persist chat session/message: %s", exc)
