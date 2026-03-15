@@ -11,6 +11,7 @@ build/
 
 # Secrets — never commit real credentials
 config.json
+push.py
 
 # Uploaded files
 uploads/
